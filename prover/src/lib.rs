@@ -135,4 +135,18 @@ mod tests {
         let inputs = CircuitInputs::default();
         prover.commit(&inputs).unwrap().prove().unwrap();
     }
+
+    #[test]
+    fn cannot_prove_with_incorrect_root_hash() {
+        let prover = WormholeProver::new();
+        let mut inputs = CircuitInputs::default();
+        inputs.root_hash = [33u8; 32];
+        let result = prover.commit(&inputs).unwrap().prove();
+
+        assert!(
+            result.is_err(),
+            "Expected proof to fail with modified inputs"
+        );
+    }
+
 }

@@ -8,6 +8,7 @@ plonky2 = "1.0.2"
 poseidon-resonance = { git = "https://github.com/Quantus-Network/poseidon-resonance" }
 criterion = "0.5.1"
 rand = "0.9.1"
+codec = { package = "parity-scale-codec", version = "3.7", default-features = false, features = ['derive'] }
 
 [workspace.package]
 version = "0.1.0"

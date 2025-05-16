@@ -16,7 +16,7 @@ use crate::{
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Amounts {
     /// The amount that a wormhole deposit adress was funded with
-    pub funding_tx_amount: F,
+    pub funding_amount: F,
     /// Amount to be given to exit account
     pub exit_amount: F,
     /// Amount to be given to miner
@@ -26,7 +26,7 @@ pub struct Amounts {
 impl Amounts {
     pub fn new(funding_tx_amount: u64, exit_amount: u64, fee_amount: u64) -> Self {
         Self {
-            funding_tx_amount: F::from_noncanonical_u64(funding_tx_amount),
+            funding_amount: F::from_noncanonical_u64(funding_tx_amount),
             exit_amount: F::from_noncanonical_u64(exit_amount),
             fee_amount: F::from_noncanonical_u64(fee_amount),
         }
@@ -56,7 +56,7 @@ impl FieldElementCodec for Amounts {
 
 impl From<&CircuitInputs> for Amounts {
     fn from(value: &CircuitInputs) -> Self {
-        Self::new(value.funding_tx_amount, value.exit_amount, value.fee_amount)
+        Self::new(value.funding_amount, value.exit_amount, value.fee_amount)
     }
 }
 
@@ -84,6 +84,11 @@ impl CircuitFragment for Amounts {
         let sum = builder.add(exit_amount, fee_amount);
         builder.connect(sum, funding_tx_amount);
 
+        // This guarantees that exit_amount + fee_amount < F::ORDER = 2^64 - 2^32 + 1
+        builder.range_check(exit_amount, 63);
+        // 2*(2^63 - 1) > F::ORDER, so we require the fee to be a bit smaller
+        builder.range_check(fee_amount, 62);
+
         AmountsTargets {
             funding_tx_amount,
             exit_amount,
@@ -97,7 +102,7 @@ impl CircuitFragment for Amounts {
         targets: Self::Targets,
         _inputs: Self::PrivateInputs,
     ) -> anyhow::Result<()> {
-        pw.set_target(targets.funding_tx_amount, self.funding_tx_amount)?;
+        pw.set_target(targets.funding_tx_amount, self.funding_amount)?;
         pw.set_target(targets.exit_amount, self.exit_amount)?;
         pw.set_target(targets.fee_amount, self.fee_amount)
     }

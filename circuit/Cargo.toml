@@ -11,6 +11,7 @@ anyhow.workspace = true
 plonky2.workspace = true
 poseidon-resonance.workspace = true
 hex = "0.4.3"
+codec.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
