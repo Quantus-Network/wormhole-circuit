@@ -6,10 +6,9 @@ use crate::exit_account::{ExitAccount, ExitAccountTargets};
 use crate::nullifier::{Nullifier, NullifierTargets};
 use crate::storage_proof::{StorageProof, StorageProofTargets};
 use crate::unspendable_account::{UnspendableAccount, UnspendableAccountTargets};
-use plonky2::field::types::PrimeField64;
+use plonky2::field::goldilocks_field::GoldilocksField;
 use plonky2::plonk::circuit_data::CircuitData;
 use plonky2::{
-    field::{goldilocks_field::GoldilocksField, types::Field},
     iop::witness::PartialWitness,
     plonk::{
         circuit_builder::CircuitBuilder,
@@ -20,14 +19,10 @@ use plonky2::{
 
 // Plonky2 setup parameters.
 pub const D: usize = 2; // D=2 provides 100-bits of security
-pub type Digest = [F; 4];
 pub type C = PoseidonGoldilocksConfig;
 pub type F = GoldilocksField;
 
 pub trait CircuitFragment {
-    /// Private inputs to the circuit. These are not stored within the circuit structs themselves
-    /// and thus needs to be supplied via this type.
-    type PrivateInputs;
     /// The targets that the circuit operates on. These are constrained in the circuit definition
     /// and filled with [`Self::fill_targets`].
     type Targets;
@@ -40,38 +35,7 @@ pub trait CircuitFragment {
         &self,
         pw: &mut PartialWitness<F>,
         targets: Self::Targets,
-        inputs: Self::PrivateInputs,
     ) -> anyhow::Result<()>;
-}
-
-/// Converts a given slice into its field element representation.
-pub fn slice_to_field_elements(input: &[u8]) -> Vec<F> {
-    const BYTES_PER_ELEMENT: usize = 8;
-
-    let mut field_elements: Vec<F> = Vec::new();
-    for chunk in input.chunks(BYTES_PER_ELEMENT) {
-        let mut bytes = [0u8; 8];
-        bytes[..chunk.len()].copy_from_slice(chunk);
-        // Convert the chunk to a field element.
-        let value = u64::from_le_bytes(bytes);
-        let field_element = F::from_noncanonical_u64(value);
-        field_elements.push(field_element);
-    }
-
-    field_elements
-}
-
-/// Converts a given field element slice into its byte representation.
-pub fn field_elements_to_bytes(input: &[F]) -> Vec<u8> {
-    let mut bytes: Vec<u8> = Vec::new();
-
-    for field_element in input {
-        let value = field_element.to_noncanonical_u64();
-        let value_bytes = value.to_le_bytes();
-        bytes.extend_from_slice(&value_bytes);
-    }
-
-    bytes
 }
 
 #[derive(Debug, Clone)]
@@ -164,5 +128,32 @@ pub mod tests {
     ) -> anyhow::Result<ProofWithPublicInputs<F, C, D>> {
         let data = builder.build::<C>();
         data.prove(pw)
+    }
+
+    #[test]
+    fn field_hash_codec() {
+        use crate::{codec::FieldElementCodec, util::FieldHash};
+        use plonky2::field::types::Field;
+
+        let nullifier = FieldHash([
+            F::from_noncanonical_u64(1),
+            F::from_noncanonical_u64(2),
+            F::from_noncanonical_u64(3),
+            F::from_noncanonical_u64(4),
+        ]);
+
+        // Encode the account as field elements and compare.
+        let field_elements = nullifier.to_field_elements();
+        assert_eq!(field_elements.len(), 4);
+        assert_eq!(field_elements[0], F::from_noncanonical_u64(1));
+        assert_eq!(field_elements[1], F::from_noncanonical_u64(2));
+        assert_eq!(field_elements[2], F::from_noncanonical_u64(3));
+        assert_eq!(field_elements[3], F::from_noncanonical_u64(4));
+
+        let field_elements_array = field_elements.try_into().unwrap();
+
+        // Decode the field elements back into an UnspendableAccount
+        let recovered_nullifier = FieldHash::from_field_elements(field_elements_array);
+        assert_eq!(nullifier, recovered_nullifier);
     }
 }

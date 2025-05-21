@@ -34,9 +34,9 @@ use wormhole_circuit::{
     circuit::{CircuitFragment, CircuitTargets},
     exit_account::ExitAccount,
     inputs::CircuitInputs,
-    nullifier::{Nullifier, NullifierInputs},
+    nullifier::Nullifier,
     storage_proof::StorageProof,
-    unspendable_account::{UnspendableAccount, UnspendableAccountInputs},
+    unspendable_account::UnspendableAccount,
 };
 
 #[derive(Debug)]
@@ -84,23 +84,11 @@ impl WormholeProver {
         let storage_proof = StorageProof::from(circuit_inputs);
         let exit_account = ExitAccount::from(circuit_inputs);
 
-        let nullifier_inputs = NullifierInputs::new(&circuit_inputs.private.nullifier_preimage);
-        let unspendable_account_inputs =
-            UnspendableAccountInputs::new(&circuit_inputs.private.unspendable_account_preimage);
-
-        amounts.fill_targets(&mut self.partial_witness, targets.amounts, ())?;
-        nullifier.fill_targets(
-            &mut self.partial_witness,
-            targets.nullifier,
-            nullifier_inputs,
-        )?;
-        unspendable_account.fill_targets(
-            &mut self.partial_witness,
-            targets.unspendable_account,
-            unspendable_account_inputs,
-        )?;
-        storage_proof.fill_targets(&mut self.partial_witness, targets.storage_proof, ())?;
-        exit_account.fill_targets(&mut self.partial_witness, targets.exit_account, ())?;
+        amounts.fill_targets(&mut self.partial_witness, targets.amounts)?;
+        nullifier.fill_targets(&mut self.partial_witness, targets.nullifier)?;
+        unspendable_account.fill_targets(&mut self.partial_witness, targets.unspendable_account)?;
+        storage_proof.fill_targets(&mut self.partial_witness, targets.storage_proof)?;
+        exit_account.fill_targets(&mut self.partial_witness, targets.exit_account)?;
 
         Ok(self)
     }

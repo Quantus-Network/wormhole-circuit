@@ -52,31 +52,27 @@ impl WormholeProofAggregatorTargets {
     }
 }
 
-pub struct WormholeProofAggregatorInputs {
-    proofs: Vec<ProofWithPublicInputs<F, C, D>>,
-    num_proofs: usize,
-}
-
 /// A circuit that aggregates proofs from the Wormhole circuit.
 pub struct WormholeProofAggregator {
     inner_verifier: WormholeVerifier,
-}
-
-impl Default for WormholeProofAggregator {
-    fn default() -> Self {
-        let inner_verifier = WormholeVerifier::new();
-        Self { inner_verifier }
-    }
+    proofs: Vec<ProofWithPublicInputs<F, C, D>>,
+    // Some proofs may be dummy proofs, so we need to keep track of how many valid proofs are
+    // included in `proofs`.
+    num_proofs: usize,
 }
 
 impl WormholeProofAggregator {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(proofs: Vec<ProofWithPublicInputs<F, C, D>>, num_proofs: usize) -> Self {
+        let inner_verifier = WormholeVerifier::new();
+        Self {
+            inner_verifier,
+            proofs,
+            num_proofs,
+        }
     }
 }
 
 impl CircuitFragment for WormholeProofAggregator {
-    type PrivateInputs = WormholeProofAggregatorInputs;
     type Targets = WormholeProofAggregatorTargets;
 
     fn circuit(
@@ -107,13 +103,9 @@ impl CircuitFragment for WormholeProofAggregator {
         &self,
         pw: &mut PartialWitness<F>,
         targets: Self::Targets,
-        inputs: Self::PrivateInputs,
     ) -> anyhow::Result<()> {
-        pw.set_target(
-            targets.num_proofs,
-            F::from_canonical_usize(inputs.num_proofs),
-        )?;
-        for (proof_target, proof) in targets.proofs.iter().zip(inputs.proofs.iter()) {
+        pw.set_target(targets.num_proofs, F::from_canonical_usize(self.num_proofs))?;
+        for (proof_target, proof) in targets.proofs.iter().zip(self.proofs.iter()) {
             pw.set_proof_with_pis_target(proof_target, proof)?;
         }
 
@@ -136,14 +128,13 @@ mod tests {
     use wormhole_prover::WormholeProver;
 
     fn run_test(
-        inputs: WormholeProofAggregatorInputs,
+        aggregator: WormholeProofAggregator,
     ) -> anyhow::Result<ProofWithPublicInputs<F, C, D>> {
         let (mut builder, mut pw) = setup_test_builder_and_witness();
         let targets = WormholeProofAggregatorTargets::new(&mut builder);
         WormholeProofAggregator::circuit(&targets, &mut builder);
 
-        let aggregator = WormholeProofAggregator::new();
-        aggregator.fill_targets(&mut pw, targets, inputs).unwrap();
+        aggregator.fill_targets(&mut pw, targets).unwrap();
         build_and_prove_test(builder, pw)
     }
 
@@ -161,8 +152,8 @@ mod tests {
         }
 
         let num_proofs = proofs.len();
-        let inputs = WormholeProofAggregatorInputs { proofs, num_proofs };
-        run_test(inputs).unwrap();
+        let aggregator = WormholeProofAggregator::new(proofs, num_proofs);
+        run_test(aggregator).unwrap();
     }
 
     #[ignore = "takes too long"]
@@ -189,7 +180,7 @@ mod tests {
         let num_proofs = proofs.len();
         proofs.extend_from_slice(&dummy_proofs);
 
-        let inputs = WormholeProofAggregatorInputs { proofs, num_proofs };
-        run_test(inputs).unwrap();
+        let aggregator = WormholeProofAggregator::new(proofs, num_proofs);
+        run_test(aggregator).unwrap();
     }
 }

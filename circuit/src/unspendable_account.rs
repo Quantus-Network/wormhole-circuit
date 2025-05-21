@@ -7,69 +7,53 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 
-use crate::{circuit::field_elements_to_bytes, codec::ByteCodec, inputs::CircuitInputs};
 use crate::{
-    circuit::{slice_to_field_elements, CircuitFragment, Digest, D, F},
-    codec::FieldElementCodec,
+    circuit::{CircuitFragment, D, F},
+    codec::ByteCodec,
+    inputs::CircuitInputs,
+    util::{slice_to_field_elements, FieldHash},
 };
 
 // FIXME: Adjust as needed.
 pub const PREIMAGE_NUM_TARGETS: usize = 5;
 
-pub type AccountId = Digest;
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnspendableAccount {
-    account_id: AccountId,
+    account_id: FieldHash,
+    preimage: Vec<F>,
 }
 
 impl UnspendableAccount {
-    pub fn new(preimage: &[u8]) -> Self {
+    pub fn new(account_id: FieldHash, preimage: &[u8]) -> Self {
+        let preimage = slice_to_field_elements(preimage);
+        Self {
+            account_id,
+            preimage,
+        }
+    }
+
+    /// Cosntructs a new [`UnspendableAccount`] from just the preimage.
+    pub fn from_preimage(preimage: &[u8]) -> Self {
         // First, convert the preimage to its representation as field elements.
         let preimage = slice_to_field_elements(preimage);
 
         // Hash twice to get the account id.
         let inner_hash = PoseidonHash::hash_no_pad(&preimage).elements;
-        let account_id = PoseidonHash::hash_no_pad(&inner_hash).elements;
+        let outer_hash = PoseidonHash::hash_no_pad(&inner_hash).elements;
+        let account_id = FieldHash(outer_hash);
 
-        Self { account_id }
-    }
-}
-
-impl ByteCodec for UnspendableAccount {
-    fn to_bytes(&self) -> Vec<u8> {
-        field_elements_to_bytes(&self.account_id)
-    }
-
-    fn from_bytes(slice: &[u8]) -> anyhow::Result<Self> {
-        let account_id = slice_to_field_elements(slice).try_into().map_err(|_| {
-            anyhow::anyhow!("failed to deserialize bytes into unspendable account hash")
-        })?;
-        Ok(Self { account_id })
-    }
-}
-
-impl FieldElementCodec for UnspendableAccount {
-    fn to_field_elements(&self) -> Vec<F> {
-        self.account_id.to_vec()
-    }
-
-    fn from_field_elements(elements: &[F]) -> anyhow::Result<Self> {
-        if elements.len() != 4 {
-            return Err(anyhow::anyhow!(
-                "Expected 4 field elements for Unspendable Account, got: {}",
-                elements.len()
-            ));
+        Self {
+            account_id,
+            preimage,
         }
-
-        let account_id = elements.try_into()?;
-        Ok(Self { account_id })
     }
 }
 
 impl From<&CircuitInputs> for UnspendableAccount {
     fn from(inputs: &CircuitInputs) -> Self {
-        inputs.public.unspendable_account
+        let account_id = FieldHash::from_bytes(inputs.public.unspendable_account);
+        let preimage = &inputs.private.nullifier_preimage;
+        Self::new(account_id, preimage)
     }
 }
 
@@ -88,20 +72,7 @@ impl UnspendableAccountTargets {
     }
 }
 
-#[derive(Debug)]
-pub struct UnspendableAccountInputs {
-    preimage: Vec<F>,
-}
-
-impl UnspendableAccountInputs {
-    pub fn new(preimage: &[u8]) -> Self {
-        let preimage = slice_to_field_elements(preimage);
-        Self { preimage }
-    }
-}
-
 impl CircuitFragment for UnspendableAccount {
-    type PrivateInputs = UnspendableAccountInputs;
     type Targets = UnspendableAccountTargets;
 
     /// Builds a circuit that asserts that the `unspendable_account` was generated from `H(H(salt+secret))`.
@@ -125,11 +96,11 @@ impl CircuitFragment for UnspendableAccount {
         &self,
         pw: &mut PartialWitness<F>,
         targets: Self::Targets,
-        inputs: Self::PrivateInputs,
     ) -> anyhow::Result<()> {
         // Unspendable account circuit values.
-        pw.set_hash_target(targets.account_id, self.account_id.into())?;
-        for (i, element) in inputs.preimage.into_iter().enumerate() {
+        let account_id = *self.account_id;
+        pw.set_hash_target(targets.account_id, account_id.into())?;
+        for (i, &element) in self.preimage.iter().enumerate() {
             pw.set_target(targets.preimage[i], element)?;
         }
 
@@ -139,7 +110,7 @@ impl CircuitFragment for UnspendableAccount {
 
 #[cfg(any(test, feature = "testing"))]
 pub mod test_helpers {
-    use super::{UnspendableAccount, UnspendableAccountInputs};
+    use super::UnspendableAccount;
 
     /// An array of preimages generated from the Resoncance Node with `./resonance-node key resonance --scheme wormhole`.
     pub const PREIMAGES: [&str; 5] = [
@@ -163,14 +134,7 @@ pub mod test_helpers {
     impl Default for UnspendableAccount {
         fn default() -> Self {
             let preimage = hex::decode(PREIMAGES[0]).unwrap();
-            Self::new(&preimage)
-        }
-    }
-
-    impl Default for UnspendableAccountInputs {
-        fn default() -> Self {
-            let preimage = hex::decode(PREIMAGES[0]).unwrap();
-            Self::new(&preimage)
+            Self::from_preimage(&preimage)
         }
     }
 }
@@ -179,9 +143,12 @@ pub mod test_helpers {
 pub mod tests {
     use plonky2::{field::types::Field, plonk::proof::ProofWithPublicInputs};
 
-    use crate::circuit::{
-        tests::{build_and_prove_test, setup_test_builder_and_witness},
-        C,
+    use crate::{
+        circuit::{
+            tests::{build_and_prove_test, setup_test_builder_and_witness},
+            C,
+        },
+        util::HASH_NUM_FELTS,
     };
 
     use super::{
@@ -191,36 +158,31 @@ pub mod tests {
 
     fn run_test(
         unspendable_account: &UnspendableAccount,
-        inputs: UnspendableAccountInputs,
     ) -> anyhow::Result<ProofWithPublicInputs<F, C, D>> {
         let (mut builder, mut pw) = setup_test_builder_and_witness();
         let targets = UnspendableAccountTargets::new(&mut builder);
         UnspendableAccount::circuit(&targets, &mut builder);
 
-        unspendable_account
-            .fill_targets(&mut pw, targets, inputs)
-            .unwrap();
+        unspendable_account.fill_targets(&mut pw, targets).unwrap();
         build_and_prove_test(builder, pw)
     }
 
     #[test]
     fn build_and_verify_proof() {
         let unspendable_account = UnspendableAccount::default();
-        let inputs = UnspendableAccountInputs::default();
-        run_test(&unspendable_account, inputs).unwrap();
+        run_test(&unspendable_account).unwrap();
     }
 
     #[test]
     fn preimage_matches_right_address() {
         for (preimage, address) in PREIMAGES.iter().zip(ADRESSES) {
             let decoded_preimage = hex::decode(preimage).unwrap();
-            let unspendable_account = UnspendableAccount::new(&decoded_preimage);
-            let inputs = UnspendableAccountInputs::new(&decoded_preimage);
+            let unspendable_account = UnspendableAccount::from_preimage(&decoded_preimage);
 
             let address = slice_to_field_elements(&hex::decode(address).unwrap());
             assert_eq!(unspendable_account.account_id.to_vec(), address);
 
-            run_test(&unspendable_account, inputs).unwrap();
+            run_test(&unspendable_account).unwrap();
         }
     }
 
@@ -228,70 +190,23 @@ pub mod tests {
     fn preimage_does_not_match_wrong_address() {
         let (preimage, wrong_address) = (PREIMAGES[0], ADRESSES[1]);
         let decoded_preimage = hex::decode(preimage).unwrap();
-        let mut unspendable_account = UnspendableAccount::new(&decoded_preimage);
+        let mut unspendable_account = UnspendableAccount::from_preimage(&decoded_preimage);
 
         // Override the correct hash with the wrong one.
-        let wrong_hash = slice_to_field_elements(&hex::decode(wrong_address).unwrap());
-        unspendable_account.account_id = wrong_hash.try_into().unwrap();
+        let wrong_hash: [F; HASH_NUM_FELTS] =
+            slice_to_field_elements(&hex::decode(wrong_address).unwrap())
+                .try_into()
+                .unwrap();
+        unspendable_account.account_id = wrong_hash.into();
 
-        let inputs = UnspendableAccountInputs::new(&decoded_preimage);
-
-        let result = run_test(&unspendable_account, inputs);
+        let result = run_test(&unspendable_account);
         assert!(result.is_err());
     }
 
     #[test]
     fn all_zero_preimage_is_valid_and_hashes() {
         let preimage_bytes = vec![0u8; 64];
-        let account = UnspendableAccount::new(&preimage_bytes);
+        let account = UnspendableAccount::from_preimage(&preimage_bytes);
         assert!(!account.account_id.to_vec().iter().all(Field::is_zero));
-    }
-
-    #[test]
-    fn unspendable_account_codec() {
-        let account = UnspendableAccount {
-            account_id: [
-                F::from_noncanonical_u64(1),
-                F::from_noncanonical_u64(2),
-                F::from_noncanonical_u64(3),
-                F::from_noncanonical_u64(4),
-            ],
-        };
-
-        // Encode the account as field elements and compare.
-        let field_elements = account.to_field_elements();
-        assert_eq!(field_elements.len(), 4);
-        assert_eq!(field_elements[0], F::from_noncanonical_u64(1));
-        assert_eq!(field_elements[1], F::from_noncanonical_u64(2));
-        assert_eq!(field_elements[2], F::from_noncanonical_u64(3));
-        assert_eq!(field_elements[3], F::from_noncanonical_u64(4));
-
-        // Decode the field elements back into an UnspendableAccount
-        let recovered_account = UnspendableAccount::from_field_elements(&field_elements).unwrap();
-        assert_eq!(account, recovered_account);
-    }
-
-    #[test]
-    fn codec_invalid_length() {
-        let invalid_elements = vec![F::from_noncanonical_u64(1), F::from_noncanonical_u64(2)];
-        let recovered_account_result = UnspendableAccount::from_field_elements(&invalid_elements);
-
-        assert!(recovered_account_result.is_err());
-        assert_eq!(
-            recovered_account_result.unwrap_err().to_string(),
-            "Expected 4 field elements for Unspendable Account, got: 2"
-        );
-    }
-
-    #[test]
-    fn codec_empty_elements() {
-        let empty_elements: Vec<F> = vec![];
-        let recovered_account_result = UnspendableAccount::from_field_elements(&empty_elements);
-
-        assert!(recovered_account_result.is_err());
-        assert_eq!(
-            recovered_account_result.unwrap_err().to_string(),
-            "Expected 4 field elements for Unspendable Account, got: 0"
-        );
     }
 }

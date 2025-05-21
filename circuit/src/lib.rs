@@ -7,3 +7,4 @@ pub mod inputs;
 pub mod nullifier;
 pub mod storage_proof;
 pub mod unspendable_account;
+pub mod util;
