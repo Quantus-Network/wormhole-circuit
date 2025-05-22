@@ -1,5 +1,7 @@
-use crate::circuit::F;
+use crate::circuit::{Digest, F};
 use plonky2::field::types::{Field, PrimeField64};
+
+pub const BYTES_PER_ELEMENT: usize = 8;
 
 pub fn u128_to_felts(num: u128) -> Vec<F> {
     let mut amount_felts: Vec<F> = Vec::with_capacity(2);
@@ -30,8 +32,6 @@ pub fn string_to_felt(input: &str) -> F {
 
 /// Converts a given slice into its field element representation.
 pub fn bytes_to_felts(input: &[u8]) -> Vec<F> {
-    const BYTES_PER_ELEMENT: usize = 8;
-
     let mut field_elements: Vec<F> = Vec::new();
     for chunk in input.chunks(BYTES_PER_ELEMENT) {
         let mut bytes = [0u8; 8];
@@ -43,6 +43,25 @@ pub fn bytes_to_felts(input: &[u8]) -> Vec<F> {
     }
 
     field_elements
+}
+
+/// Convert an array of bytes into a [`Digest`].
+pub fn bytes_to_digest(input: [u8; BYTES_PER_ELEMENT * 4]) -> Digest {
+    let mut result = [F::ZERO; 4];
+
+    for (i, f) in result.iter_mut().enumerate() {
+        let start = i * BYTES_PER_ELEMENT;
+        let end = start + BYTES_PER_ELEMENT;
+        let chunk = &input[start..end];
+
+        let mut bytes = [0u8; 8];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+
+        let value = u64::from_le_bytes(bytes);
+        *f = F::from_noncanonical_u64(value);
+    }
+
+    result
 }
 
 /// Converts a given field element slice into its byte representation.
