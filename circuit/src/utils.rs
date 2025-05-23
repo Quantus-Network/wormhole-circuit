@@ -3,19 +3,18 @@ use plonky2::field::types::{Field, PrimeField64};
 
 pub const BYTES_PER_ELEMENT: usize = 8;
 
-pub fn u128_to_felts(num: u128) -> Vec<F> {
-    let mut amount_felts: Vec<F> = Vec::with_capacity(2);
-    let amount_high = F::from_noncanonical_u64((num >> 64) as u64);
-    let amount_low = F::from_noncanonical_u64(num as u64);
-    amount_felts.push(amount_high);
-    amount_felts.push(amount_low);
-    amount_felts
+// TODO: A conversion function that's generic over input length.
+pub fn u128_to_felts(num: u128) -> [F; 2] {
+    let mut felts = [F::ZERO; 2];
+    felts[0] = F::from_noncanonical_u64((num >> 64) as u64);
+    felts[1] = F::from_noncanonical_u64(num as u64);
+    felts
 }
 
-pub fn felts_to_u128(felts: Vec<F>) -> u128 {
-    let amount_high: u128 = felts[0].0 as u128;
-    let amount_low: u128 = felts[1].0 as u128;
-    (amount_high << 64) | amount_low
+pub fn felts_to_u128(felts: [F; 2]) -> u128 {
+    let high: u128 = felts[0].0 as u128;
+    let low: u128 = felts[1].0 as u128;
+    (high << 64) | low
 }
 
 // Encodes an 8-byte string into a single field element
@@ -106,7 +105,7 @@ mod tests {
             assert_eq!(felts.len(), 2, "Expected exactly two field elements");
 
             // Vec<F> -> u128
-            let round_trip_num = felts_to_u128(felts.clone());
+            let round_trip_num = felts_to_u128(felts);
 
             // Check that the high and low parts match
             let expected_high = (num >> 64) as u64;
@@ -133,10 +132,10 @@ mod tests {
         ];
 
         for (high, low) in test_cases {
-            let felts = vec![high, low];
+            let felts = [high, low];
 
             // Vec<F> -> u128
-            let num = felts_to_u128(felts.clone());
+            let num = felts_to_u128(felts);
 
             // u128 -> Vec<F>
             let round_trip_felts = u128_to_felts(num);
@@ -163,7 +162,7 @@ mod tests {
         // Test zero
         let num = 0u128;
         let felts = u128_to_felts(num);
-        assert_eq!(felts, vec![f(0), f(0)]);
+        assert_eq!(felts, [f(0), f(0)]);
         let result = felts_to_u128(felts);
         assert_eq!(result, 0);
     }

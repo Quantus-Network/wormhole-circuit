@@ -9,10 +9,10 @@ use plonky2::{
 };
 
 use crate::circuit::{CircuitFragment, D, F};
+use crate::utils::u128_to_felts;
 use crate::{codec::FieldElementCodec, utils::bytes_to_felts};
 use crate::{gadgets::is_const_less_than, substrate_account::SubstrateAccount};
 use crate::{inputs::CircuitInputs, unspendable_account::UnspendableAccount};
-use crate::utils::u128_to_felts;
 
 pub const MAX_PROOF_LEN: usize = 20;
 pub const PROOF_NODE_MAX_SIZE_F: usize = 73;
@@ -58,7 +58,7 @@ pub struct LeafInputs {
     nonce: F,
     funding_account: SubstrateAccount,
     to_account: UnspendableAccount,
-    funding_amount: Vec<F>, // 2 since balances are u128
+    funding_amount: [F; 2], // 2 since balances are u128
 }
 
 #[derive(Debug)]
@@ -216,9 +216,9 @@ fn slice_to_hashout(slice: &[u8]) -> HashOut<F> {
 pub mod test_helpers {
     use plonky2::field::types::Field;
 
+    use super::{LeafInputs, StorageProof};
     use crate::circuit::F;
     use crate::utils::u128_to_felts;
-    use super::{LeafInputs, StorageProof};
 
     pub const ROOT_HASH: &str = "77eb9d80cd12acfd902b459eb3b8876f05f31ef6a17ed5fdb060ee0e86dd8139";
     pub const STORAGE_PROOF: [(&str, &str); 3] = [
