@@ -19,9 +19,11 @@
 /// # Ok(())
 /// # }
 /// ```
-use plonky2::plonk::{circuit_data::VerifierCircuitData, proof::ProofWithPublicInputs};
+use plonky2::plonk::circuit_data::VerifierCircuitData;
 
 use wormhole_circuit::circuit::{WormholeCircuit, C, D, F};
+
+pub use plonky2::plonk::proof::ProofWithPublicInputs;
 
 pub struct WormholeVerifier {
     pub circuit_data: VerifierCircuitData<F, C, D>,
