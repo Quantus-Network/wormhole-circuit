@@ -9,13 +9,16 @@ use plonky2::{
 };
 
 use crate::circuit::{CircuitFragment, D, F};
-use crate::gadgets::is_const_less_than;
-use crate::inputs::CircuitInputs;
-use crate::utils::bytes_to_felts;
+use crate::utils::u128_to_felts;
+use crate::{codec::FieldElementCodec, utils::bytes_to_felts};
+use crate::{gadgets::is_const_less_than, substrate_account::SubstrateAccount};
+use crate::{inputs::CircuitInputs, unspendable_account::UnspendableAccount};
 
 pub const MAX_PROOF_LEN: usize = 20;
 pub const PROOF_NODE_MAX_SIZE_F: usize = 73;
 pub const PROOF_NODE_MAX_SIZE_B: usize = 256;
+
+pub const LEAF_INPUTS_NUM_FELTS: usize = 11;
 
 #[derive(Debug, Clone)]
 pub struct StorageProofTargets {
@@ -23,6 +26,7 @@ pub struct StorageProofTargets {
     pub proof_len: Target,
     pub proof_data: Vec<Vec<Target>>,
     pub hashes: Vec<HashOutTarget>,
+    pub leaf_inputs: Vec<Target>,
 }
 
 impl StorageProofTargets {
@@ -37,13 +41,24 @@ impl StorageProofTargets {
             .map(|_| builder.add_virtual_hash())
             .collect();
 
+        let leaf_inputs = builder.add_virtual_targets(LEAF_INPUTS_NUM_FELTS);
+
         Self {
             root_hash: builder.add_virtual_hash_public_input(),
             proof_len: builder.add_virtual_target(),
             proof_data,
             hashes,
+            leaf_inputs,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct LeafInputs {
+    nonce: F,
+    funding_account: SubstrateAccount,
+    to_account: UnspendableAccount,
+    funding_amount: [F; 2], // 2 since balances are u128
 }
 
 #[derive(Debug)]
@@ -51,12 +66,13 @@ pub struct StorageProof {
     proof: Vec<Vec<F>>,
     hashes: Vec<Vec<F>>,
     root_hash: [u8; 32],
+    leaf_inputs: LeafInputs,
 }
 
 impl StorageProof {
     /// The input is a storage proof as a tuple where each part is split at the index where the child node's
     /// hash, if any, appears within this proof node; and a root hash.
-    pub fn new(proof: &[(Vec<u8>, Vec<u8>)], root_hash: [u8; 32]) -> Self {
+    pub fn new(proof: &[(Vec<u8>, Vec<u8>)], root_hash: [u8; 32], leaf_inputs: LeafInputs) -> Self {
         // First construct the proof and the hash array
         let mut constructed_proof = Vec::with_capacity(proof.len());
         let mut hashes = Vec::with_capacity(proof.len());
@@ -77,16 +93,29 @@ impl StorageProof {
             proof: constructed_proof,
             hashes,
             root_hash,
+            leaf_inputs,
         }
     }
 }
 
 impl From<&CircuitInputs> for StorageProof {
     fn from(inputs: &CircuitInputs) -> Self {
-        Self::new(&inputs.private.storage_proof, inputs.public.root_hash)
+        let leaf_inputs = LeafInputs {
+            nonce: F::from_canonical_u32(inputs.private.funding_nonce),
+            funding_account: inputs.private.funding_account,
+            to_account: inputs.private.unspendable_account,
+            funding_amount: u128_to_felts(inputs.public.funding_amount),
+        };
+
+        Self::new(
+            &inputs.private.storage_proof,
+            inputs.public.root_hash,
+            leaf_inputs,
+        )
     }
 }
 
+// TODO: Consider splitting storage proof circuit.
 impl CircuitFragment for StorageProof {
     type PrivateInputs = ();
     type Targets = StorageProofTargets;
@@ -97,10 +126,13 @@ impl CircuitFragment for StorageProof {
             proof_len,
             ref proof_data,
             ref hashes,
+            ref leaf_inputs,
         }: &Self::Targets,
         builder: &mut CircuitBuilder<F, D>,
     ) {
         // Setup constraints.
+        let leaf_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(leaf_inputs.to_vec());
+
         // The first node should be the root node so we initialize `prev_hash` to the provided `root_hash`.
         let mut prev_hash = root_hash;
         let n_log = (usize::BITS - (MAX_PROOF_LEN - 1).leading_zeros()) as usize;
@@ -110,9 +142,20 @@ impl CircuitFragment for StorageProof {
             let is_proof_node = is_const_less_than(builder, i, proof_len, n_log);
             let computed_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(node.clone());
 
+            // If this node is a proof node we compare it against the previous hash.
             for y in 0..4 {
                 let diff = builder.sub(computed_hash.elements[y], prev_hash.elements[y]);
                 let result = builder.mul(diff, is_proof_node.target);
+                let zero = builder.zero();
+                builder.connect(result, zero);
+            }
+
+            // Do the same for the leaf hash.
+            let index = builder.constant(F::from_canonical_usize(i));
+            let is_leaf_node = builder.is_equal(proof_len, index);
+            for y in 0..4 {
+                let leaf_diff = builder.sub(leaf_hash.elements[y], prev_hash.elements[y]);
+                let result = builder.mul(leaf_diff, is_leaf_node.target);
                 let zero = builder.zero();
                 builder.connect(result, zero);
             }
@@ -150,6 +193,14 @@ impl CircuitFragment for StorageProof {
             pw.set_hash_target(targets.hashes[i], HashOut::from_partial(&hash[..4]))?;
         }
 
+        // Fill leaf inputs.
+        let mut leaf_inputs = Vec::with_capacity(LEAF_INPUTS_NUM_FELTS);
+        leaf_inputs.push(self.leaf_inputs.nonce);
+        leaf_inputs.extend_from_slice(&self.leaf_inputs.funding_account.to_field_elements());
+        leaf_inputs.extend_from_slice(&self.leaf_inputs.to_account.to_field_elements());
+        leaf_inputs.extend_from_slice(&self.leaf_inputs.funding_amount);
+        pw.set_target_arr(&targets.leaf_inputs, &leaf_inputs)?;
+
         Ok(())
     }
 }
@@ -163,7 +214,11 @@ fn slice_to_hashout(slice: &[u8]) -> HashOut<F> {
 
 #[cfg(any(test, feature = "testing"))]
 pub mod test_helpers {
-    use super::StorageProof;
+    use plonky2::field::types::Field;
+
+    use super::{LeafInputs, StorageProof};
+    use crate::circuit::F;
+    use crate::utils::u128_to_felts;
 
     pub const ROOT_HASH: &str = "77eb9d80cd12acfd902b459eb3b8876f05f31ef6a17ed5fdb060ee0e86dd8139";
     pub const STORAGE_PROOF: [(&str, &str); 3] = [
@@ -181,9 +236,21 @@ pub mod test_helpers {
         ),
     ];
 
+    // TODO: Get real inputs from the node.
+    impl Default for LeafInputs {
+        fn default() -> Self {
+            Self {
+                nonce: F::from_canonical_u32(1),
+                funding_account: Default::default(),
+                to_account: Default::default(),
+                funding_amount: u128_to_felts(0),
+            }
+        }
+    }
+
     impl Default for StorageProof {
         fn default() -> Self {
-            StorageProof::new(&default_proof(), default_root_hash())
+            StorageProof::new(&default_proof(), default_root_hash(), LeafInputs::default())
         }
     }
 
@@ -211,9 +278,12 @@ pub mod tests {
         test_helpers::{default_proof, default_root_hash},
         *,
     };
-    use crate::circuit::{
-        tests::{build_and_prove_test, setup_test_builder_and_witness},
-        C,
+    use crate::{
+        circuit::{
+            tests::{build_and_prove_test, setup_test_builder_and_witness},
+            C,
+        },
+        codec::ByteCodec,
     };
     use rand::Rng;
 
@@ -222,7 +292,7 @@ pub mod tests {
         let targets = StorageProofTargets::new(&mut builder);
         StorageProof::circuit(&targets, &mut builder);
 
-        storage_proof.fill_targets(&mut pw, targets, ()).unwrap();
+        storage_proof.fill_targets(&mut pw, targets, ())?;
         build_and_prove_test(builder, pw)
     }
 
@@ -249,8 +319,36 @@ pub mod tests {
 
         // Flip the first byte in the first node hash.
         tampered_proof[0].1[0] ^= 0xFF;
-        let proof = StorageProof::new(&tampered_proof, default_root_hash());
+        let proof = StorageProof::new(&tampered_proof, default_root_hash(), LeafInputs::default());
 
+        run_test(&proof).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "set twice with different values")]
+    fn invalid_leaf_nonce_fails() {
+        let leaf_inputs = LeafInputs {
+            nonce: F::from_canonical_u32(10),
+            ..Default::default()
+        };
+        let proof = StorageProof {
+            leaf_inputs,
+            ..Default::default()
+        };
+        run_test(&proof).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "set twice with different values")]
+    fn invalid_leaf_account_fails() {
+        let leaf_inputs = LeafInputs {
+            to_account: UnspendableAccount::from_bytes(&[0u8; 32]).unwrap(),
+            ..Default::default()
+        };
+        let proof = StorageProof {
+            leaf_inputs,
+            ..Default::default()
+        };
         run_test(&proof).unwrap();
     }
 
@@ -278,7 +376,8 @@ pub mod tests {
             tampered_proof[node_index].1[byte_index] ^= rng.random_range(1..=255);
 
             // Create the proof and inputs
-            let proof = StorageProof::new(&tampered_proof, default_root_hash());
+            let proof =
+                StorageProof::new(&tampered_proof, default_root_hash(), LeafInputs::default());
 
             // Catch panic from run_test
             let result = panic::catch_unwind(|| {
