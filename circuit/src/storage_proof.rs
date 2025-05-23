@@ -12,12 +12,13 @@ use crate::circuit::{CircuitFragment, D, F};
 use crate::{codec::FieldElementCodec, utils::bytes_to_felts};
 use crate::{gadgets::is_const_less_than, substrate_account::SubstrateAccount};
 use crate::{inputs::CircuitInputs, unspendable_account::UnspendableAccount};
+use crate::utils::u128_to_felts;
 
 pub const MAX_PROOF_LEN: usize = 20;
 pub const PROOF_NODE_MAX_SIZE_F: usize = 73;
 pub const PROOF_NODE_MAX_SIZE_B: usize = 256;
 
-pub const LEAF_INPUTS_NUM_FELTS: usize = 10;
+pub const LEAF_INPUTS_NUM_FELTS: usize = 11;
 
 #[derive(Debug, Clone)]
 pub struct StorageProofTargets {
@@ -57,7 +58,7 @@ pub struct LeafInputs {
     nonce: F,
     funding_account: SubstrateAccount,
     to_account: UnspendableAccount,
-    funding_amount: F,
+    funding_amount: Vec<F>, // 2 since balances are u128
 }
 
 #[derive(Debug)]
@@ -103,7 +104,7 @@ impl From<&CircuitInputs> for StorageProof {
             nonce: F::from_canonical_u32(inputs.private.funding_nonce),
             funding_account: inputs.private.funding_account,
             to_account: inputs.private.unspendable_account,
-            funding_amount: F::from_noncanonical_u128(inputs.public.funding_amount),
+            funding_amount: u128_to_felts(inputs.public.funding_amount),
         };
 
         Self::new(
@@ -197,7 +198,7 @@ impl CircuitFragment for StorageProof {
         leaf_inputs.push(self.leaf_inputs.nonce);
         leaf_inputs.extend_from_slice(&self.leaf_inputs.funding_account.to_field_elements());
         leaf_inputs.extend_from_slice(&self.leaf_inputs.to_account.to_field_elements());
-        leaf_inputs.push(self.leaf_inputs.funding_amount);
+        leaf_inputs.extend_from_slice(&self.leaf_inputs.funding_amount);
         pw.set_target_arr(&targets.leaf_inputs, &leaf_inputs)?;
 
         Ok(())
@@ -216,7 +217,7 @@ pub mod test_helpers {
     use plonky2::field::types::Field;
 
     use crate::circuit::F;
-
+    use crate::utils::u128_to_felts;
     use super::{LeafInputs, StorageProof};
 
     pub const ROOT_HASH: &str = "77eb9d80cd12acfd902b459eb3b8876f05f31ef6a17ed5fdb060ee0e86dd8139";
@@ -242,7 +243,7 @@ pub mod test_helpers {
                 nonce: F::from_canonical_u32(1),
                 funding_account: Default::default(),
                 to_account: Default::default(),
-                funding_amount: F::from_noncanonical_u128(0),
+                funding_amount: u128_to_felts(0),
             }
         }
     }
@@ -291,7 +292,7 @@ pub mod tests {
         let targets = StorageProofTargets::new(&mut builder);
         StorageProof::circuit(&targets, &mut builder);
 
-        storage_proof.fill_targets(&mut pw, targets, ()).unwrap();
+        storage_proof.fill_targets(&mut pw, targets, ())?;
         build_and_prove_test(builder, pw)
     }
 
