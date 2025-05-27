@@ -49,7 +49,7 @@ impl TryFrom<ProofWithPublicInputs<F, C, D>> for PublicCircuitInputs {
 
         // TODO: Create constants for the indices where each field is expected in the public
         // inputs.
-        let funding_amount = felts_to_u128(public_inputs[0..2].to_vec());
+        let funding_amount = felts_to_u128(public_inputs[0..2].try_into()?);
         let nullifier = Nullifier::from_field_elements(&public_inputs[2..6])?;
 
         let root_hash: [u8; 32] = felts_to_bytes(&public_inputs[6..10])

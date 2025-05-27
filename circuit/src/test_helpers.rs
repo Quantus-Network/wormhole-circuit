@@ -38,7 +38,12 @@ impl CircuitInputs {
 }
 
 pub mod storage_proof {
-    use crate::storage_proof::StorageProof;
+    use plonky2::field::types::Field;
+
+    use crate::{
+        circuit::F,
+        storage_proof::{LeafInputs, StorageProof},
+    };
 
     pub const DEFAULT_ROOT_HASH: &str =
         "77eb9d80cd12acfd902b459eb3b8876f05f31ef6a17ed5fdb060ee0e86dd8139";
@@ -59,7 +64,23 @@ pub mod storage_proof {
 
     impl StorageProof {
         pub fn test_inputs() -> Self {
-            StorageProof::new(&default_storage_proof(), default_root_hash())
+            StorageProof::new(
+                &default_storage_proof(),
+                default_root_hash(),
+                LeafInputs::test_inputs(),
+            )
+        }
+    }
+
+    // TODO: Get real inputs from the node.
+    impl LeafInputs {
+        pub fn test_inputs() -> Self {
+            Self::new(
+                F::from_canonical_u32(1),
+                Default::default(),
+                Default::default(),
+                [F::from_noncanonical_u64(0), F::from_noncanonical_u64(1)],
+            )
         }
     }
 
