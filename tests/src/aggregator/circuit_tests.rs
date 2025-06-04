@@ -3,7 +3,7 @@ use crate::aggregator::circuit_config;
 use crate::circuit_helpers::{build_and_prove_test, setup_test_builder_and_witness};
 use test_helpers::storage_proof::TestInputs;
 use wormhole_aggregator::circuit::{WormholeProofAggregatorInner, WormholeProofAggregatorTargets};
-use wormhole_aggregator::MAX_NUM_PROOFS_TO_AGGREGATE;
+use wormhole_aggregator::DEFAULT_NUM_PROOFS_TO_AGGREGATE;
 use wormhole_circuit::circuit::{CircuitFragment, C, D, F};
 use wormhole_circuit::inputs::CircuitInputs;
 use wormhole_prover::WormholeProver;
@@ -13,7 +13,10 @@ fn run_test(
     proofs: Vec<ProofWithPublicInputs<F, C, D>>,
 ) -> anyhow::Result<plonky2::plonk::proof::ProofWithPublicInputs<F, C, D>> {
     let (mut builder, mut pw) = setup_test_builder_and_witness(false);
-    let targets = WormholeProofAggregatorTargets::new(&mut builder, circuit_config());
+    let targets = WormholeProofAggregatorTargets::<{ DEFAULT_NUM_PROOFS_TO_AGGREGATE }>::new(
+        &mut builder,
+        circuit_config(),
+    );
     WormholeProofAggregatorInner::circuit(&targets, &mut builder);
 
     let mut aggregator = WormholeProofAggregatorInner::new(circuit_config());
@@ -25,8 +28,8 @@ fn run_test(
 #[test]
 fn build_and_verify_proof() {
     // Create proofs.
-    let mut proofs = Vec::with_capacity(MAX_NUM_PROOFS_TO_AGGREGATE);
-    for _ in 0..MAX_NUM_PROOFS_TO_AGGREGATE {
+    let mut proofs = Vec::with_capacity(DEFAULT_NUM_PROOFS_TO_AGGREGATE);
+    for _ in 0..DEFAULT_NUM_PROOFS_TO_AGGREGATE {
         let prover = WormholeProver::new(circuit_config());
         let inputs = CircuitInputs::test_inputs();
         let proof = prover.commit(&inputs).unwrap().prove().unwrap();
@@ -38,8 +41,8 @@ fn build_and_verify_proof() {
 #[test]
 fn few_proofs_pass() {
     // Create proofs.
-    let mut proofs = Vec::with_capacity(MAX_NUM_PROOFS_TO_AGGREGATE);
-    for _ in 0..(MAX_NUM_PROOFS_TO_AGGREGATE / 2) {
+    let mut proofs = Vec::with_capacity(DEFAULT_NUM_PROOFS_TO_AGGREGATE);
+    for _ in 0..(DEFAULT_NUM_PROOFS_TO_AGGREGATE / 2) {
         let prover = WormholeProver::new(circuit_config());
         let inputs = CircuitInputs::test_inputs();
         let proof = prover.commit(&inputs).unwrap().prove().unwrap();

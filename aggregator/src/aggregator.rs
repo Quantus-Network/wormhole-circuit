@@ -9,28 +9,25 @@ use plonky2::{
 use wormhole_circuit::circuit::{CircuitFragment, C, D, F};
 use wormhole_verifier::ProofWithPublicInputs;
 
-use crate::{
-    circuit::{WormholeProofAggregatorInner, WormholeProofAggregatorTargets},
-    MAX_NUM_PROOFS_TO_AGGREGATE,
-};
+use crate::circuit::{WormholeProofAggregatorInner, WormholeProofAggregatorTargets};
 
 /// A circuit that aggregates proofs from the Wormhole circuit.
-pub struct WormholeProofAggregator {
-    pub inner: WormholeProofAggregatorInner,
+pub struct WormholeProofAggregator<const N: usize> {
+    pub inner: WormholeProofAggregatorInner<N>,
     pub circuit_data: CircuitData<F, C, D>,
     partial_witness: PartialWitness<F>,
-    targets: WormholeProofAggregatorTargets,
+    targets: WormholeProofAggregatorTargets<N>,
     pub proofs_buffer: Option<Vec<ProofWithPublicInputs<F, C, D>>>,
 }
 
-impl Default for WormholeProofAggregator {
+impl<const N: usize> Default for WormholeProofAggregator<N> {
     fn default() -> Self {
         let config = CircuitConfig::standard_recursion_zk_config();
         Self::new(config)
     }
 }
 
-impl WormholeProofAggregator {
+impl<const N: usize> WormholeProofAggregator<N> {
     pub fn new(config: CircuitConfig) -> Self {
         let inner = WormholeProofAggregatorInner::new(config.clone());
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
@@ -42,7 +39,7 @@ impl WormholeProofAggregator {
         WormholeProofAggregatorInner::circuit(&targets, &mut builder);
         let circuit_data = builder.build();
         let partial_witness = PartialWitness::new();
-        let proofs_buffer = Some(Vec::with_capacity(MAX_NUM_PROOFS_TO_AGGREGATE));
+        let proofs_buffer = Some(Vec::with_capacity(N));
 
         Self {
             inner,
@@ -55,7 +52,7 @@ impl WormholeProofAggregator {
 
     pub fn push_proof(&mut self, proof: ProofWithPublicInputs<F, C, D>) -> anyhow::Result<()> {
         if let Some(proofs_buffer) = self.proofs_buffer.as_mut() {
-            if proofs_buffer.len() >= MAX_NUM_PROOFS_TO_AGGREGATE {
+            if proofs_buffer.len() >= N {
                 bail!("tried to add proof when proof buffer is full")
             }
             proofs_buffer.push(proof);

@@ -1,5 +1,5 @@
 #![cfg(test)]
-use wormhole_aggregator::{aggregator::WormholeProofAggregator, MAX_NUM_PROOFS_TO_AGGREGATE};
+use wormhole_aggregator::{aggregator::WormholeProofAggregator, DEFAULT_NUM_PROOFS_TO_AGGREGATE};
 use wormhole_circuit::inputs::CircuitInputs;
 use wormhole_prover::WormholeProver;
 
@@ -13,7 +13,8 @@ fn push_proof_to_buffer() {
     let inputs = CircuitInputs::test_inputs();
     let proof = prover.commit(&inputs).unwrap().prove().unwrap();
 
-    let mut aggregator = WormholeProofAggregator::new(circuit_config());
+    let mut aggregator =
+        WormholeProofAggregator::<{ DEFAULT_NUM_PROOFS_TO_AGGREGATE }>::new(circuit_config());
     aggregator.push_proof(proof).unwrap();
 
     let proofs_buffer = aggregator.proofs_buffer.unwrap();
@@ -27,10 +28,11 @@ fn push_proof_to_full_buffer() {
     let inputs = CircuitInputs::test_inputs();
     let proof = prover.commit(&inputs).unwrap().prove().unwrap();
 
-    let mut aggregator = WormholeProofAggregator::new(circuit_config());
+    let mut aggregator =
+        WormholeProofAggregator::<{ DEFAULT_NUM_PROOFS_TO_AGGREGATE }>::new(circuit_config());
 
     // Fill up the proof buffer.
-    for _ in 0..MAX_NUM_PROOFS_TO_AGGREGATE {
+    for _ in 0..DEFAULT_NUM_PROOFS_TO_AGGREGATE {
         aggregator.push_proof(proof.clone()).unwrap();
     }
 
@@ -38,7 +40,7 @@ fn push_proof_to_full_buffer() {
     assert!(result.is_err());
 
     let proofs_buffer = aggregator.proofs_buffer.unwrap();
-    assert_eq!(proofs_buffer.len(), MAX_NUM_PROOFS_TO_AGGREGATE);
+    assert_eq!(proofs_buffer.len(), DEFAULT_NUM_PROOFS_TO_AGGREGATE);
 }
 
 #[test]
@@ -48,7 +50,8 @@ fn aggregate_single_proof() {
     let inputs = CircuitInputs::test_inputs();
     let proof = prover.commit(&inputs).unwrap().prove().unwrap();
 
-    let mut aggregator = WormholeProofAggregator::new(circuit_config());
+    let mut aggregator =
+        WormholeProofAggregator::<{ DEFAULT_NUM_PROOFS_TO_AGGREGATE }>::new(circuit_config());
     aggregator.push_proof(proof).unwrap();
 
     aggregator.aggregate().unwrap();

@@ -10,34 +10,32 @@ use plonky2::{
 use wormhole_circuit::circuit::{CircuitFragment, C, D, F};
 use wormhole_verifier::{ProofWithPublicInputs, WormholeVerifier};
 
-use crate::MAX_NUM_PROOFS_TO_AGGREGATE;
-
 #[cfg(not(feature = "no_zk"))]
 const DUMMY_PROOF_BYTES: &[u8] = include_bytes!("../data/dummy_proof_zk.bin");
 #[cfg(feature = "no_zk")]
 const DUMMY_PROOF_BYTES: &[u8] = include_bytes!("../data/dummy_proof.bin");
 
 #[derive(Debug, Clone)]
-pub struct WormholeProofAggregatorTargets {
+pub struct WormholeProofAggregatorTargets<const N: usize> {
     verifier_data: VerifierCircuitTarget,
-    proofs: [ProofWithPublicInputsTarget<D>; MAX_NUM_PROOFS_TO_AGGREGATE],
+    proofs: [ProofWithPublicInputsTarget<D>; N],
     // HACK: This allows us to only create `circuit_data` once.
     circuit_data: CommonCircuitData<F, D>,
 }
 
-impl WormholeProofAggregatorTargets {
+impl<const N: usize> WormholeProofAggregatorTargets<N> {
     pub fn new(builder: &mut CircuitBuilder<F, D>, config: CircuitConfig) -> Self {
         let circuit_data = WormholeVerifier::new(config, None).circuit_data.common;
         let verifier_data =
             builder.add_virtual_verifier_data(circuit_data.fri_params.config.cap_height);
 
         // Setup targets for proofs.
-        let mut proofs = Vec::with_capacity(MAX_NUM_PROOFS_TO_AGGREGATE);
-        for _ in 0..MAX_NUM_PROOFS_TO_AGGREGATE {
+        let mut proofs = Vec::with_capacity(N);
+        for _ in 0..N {
             proofs.push(builder.add_virtual_proof_with_pis(&circuit_data));
         }
 
-        let proofs: [ProofWithPublicInputsTarget<D>; MAX_NUM_PROOFS_TO_AGGREGATE] =
+        let proofs: [ProofWithPublicInputsTarget<D>; N] =
             std::array::from_fn(|_| builder.add_virtual_proof_with_pis(&circuit_data));
 
         Self {
@@ -48,19 +46,19 @@ impl WormholeProofAggregatorTargets {
     }
 }
 
-pub struct WormholeProofAggregatorInner {
+pub struct WormholeProofAggregatorInner<const N: usize> {
     pub inner_verifier: WormholeVerifier,
     num_proofs: usize,
     proofs: Vec<ProofWithPublicInputs<F, C, D>>,
 }
 
-impl WormholeProofAggregatorInner {
+impl<const N: usize> WormholeProofAggregatorInner<N> {
     pub fn new(config: CircuitConfig) -> Self {
         let inner_verifier = WormholeVerifier::new(config, None);
         Self {
             inner_verifier,
             num_proofs: 0,
-            proofs: Vec::with_capacity(MAX_NUM_PROOFS_TO_AGGREGATE),
+            proofs: Vec::with_capacity(N),
         }
     }
 
@@ -70,7 +68,7 @@ impl WormholeProofAggregatorInner {
     ) -> anyhow::Result<()> {
         let num_proofs = proofs.len();
 
-        if num_proofs > MAX_NUM_PROOFS_TO_AGGREGATE {
+        if num_proofs > N {
             bail!("proofs to aggregate was more than the maximum allowed")
         }
 
@@ -82,7 +80,7 @@ impl WormholeProofAggregatorInner {
             DUMMY_PROOF_BYTES.to_vec(),
             &self.inner_verifier.circuit_data.common,
         )?;
-        for _ in 0..(MAX_NUM_PROOFS_TO_AGGREGATE - num_proofs) {
+        for _ in 0..(N - num_proofs) {
             self.proofs.push(dummy_proof.clone());
         }
 
@@ -90,8 +88,8 @@ impl WormholeProofAggregatorInner {
     }
 }
 
-impl CircuitFragment for WormholeProofAggregatorInner {
-    type Targets = WormholeProofAggregatorTargets;
+impl<const N: usize> CircuitFragment for WormholeProofAggregatorInner<N> {
+    type Targets = WormholeProofAggregatorTargets<N>;
 
     fn circuit(
         Self::Targets {
