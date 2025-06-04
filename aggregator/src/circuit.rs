@@ -49,7 +49,7 @@ impl WormholeProofAggregatorTargets {
 }
 
 pub struct WormholeProofAggregatorInner {
-    inner_verifier: WormholeVerifier,
+    pub inner_verifier: WormholeVerifier,
     num_proofs: usize,
     proofs: Vec<ProofWithPublicInputs<F, C, D>>,
 }

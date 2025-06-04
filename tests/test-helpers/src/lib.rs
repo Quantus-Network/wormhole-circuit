@@ -1,4 +1,4 @@
-use crate::test_helpers::storage_proof::{default_storage_proof, TestInputs, DEFAULT_ROOT_HASH};
+use crate::storage_proof::{DEFAULT_ROOT_HASH, TestInputs, default_storage_proof};
 use wormhole_circuit::{
     inputs::{CircuitInputs, PrivateCircuitInputs, PublicCircuitInputs},
     nullifier::Nullifier,

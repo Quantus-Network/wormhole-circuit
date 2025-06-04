@@ -1,7 +1,7 @@
 use std::fs;
 
-use crate::test_helpers::storage_proof::TestInputs;
 use plonky2::plonk::circuit_data::CircuitConfig;
+use test_helpers::storage_proof::TestInputs;
 use wormhole_circuit::inputs::{CircuitInputs, PublicCircuitInputs};
 use wormhole_prover::WormholeProver;
 

@@ -14,21 +14,13 @@ wormhole-aggregator = { path = "../aggregator", features = ["no_zk"] }
 wormhole-circuit = { path = "../circuit" }
 wormhole-prover = { path = "../prover" }
 wormhole-verifier = { path = "../verifier" }
+test-helpers = { path = "./test-helpers" }
 plonky2 = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true }
 rand = { version = "0.9.1", default-features = false, features = [
   "thread_rng",
 ] }
-criterion = { workspace = true }
 
 [lints]
 workspace = true
-
-[[bench]]
-name = "prover"
-harness = false
-
-[[bench]]
-name = "verifier"
-harness = false

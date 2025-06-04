@@ -8,10 +8,13 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-plonky2 = { workspace = true, default-features = false }
+plonky2 = { workspace = true }
 wormhole-circuit = { path = "../circuit", default-features = false }
 wormhole-prover = { path = "../prover", default-features = false }
 wormhole-verifier = { path = "../verifier", default-features = false }
+
+[dev-dependencies]
+criterion = { workspace = true }
 
 [features]
 default = ["std"]
@@ -27,3 +30,7 @@ no_zk = []
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "aggregator"
+harness = false

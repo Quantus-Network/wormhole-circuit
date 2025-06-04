@@ -3,7 +3,8 @@ use wormhole_aggregator::{aggregator::WormholeProofAggregator, MAX_NUM_PROOFS_TO
 use wormhole_circuit::inputs::CircuitInputs;
 use wormhole_prover::WormholeProver;
 
-use crate::{aggregator::circuit_config, test_helpers::storage_proof::TestInputs};
+use crate::aggregator::circuit_config;
+use test_helpers::storage_proof::TestInputs;
 
 #[test]
 fn push_proof_to_buffer() {

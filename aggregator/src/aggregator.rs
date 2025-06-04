@@ -16,8 +16,8 @@ use crate::{
 
 /// A circuit that aggregates proofs from the Wormhole circuit.
 pub struct WormholeProofAggregator {
-    inner: WormholeProofAggregatorInner,
-    circuit_data: CircuitData<F, C, D>,
+    pub inner: WormholeProofAggregatorInner,
+    pub circuit_data: CircuitData<F, C, D>,
     partial_witness: PartialWitness<F>,
     targets: WormholeProofAggregatorTargets,
     pub proofs_buffer: Option<Vec<ProofWithPublicInputs<F, C, D>>>,

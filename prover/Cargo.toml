@@ -8,8 +8,12 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-plonky2 = { workspace = true, default-features = false }
-wormhole-circuit = { path = "../circuit", default-features = false }
+plonky2 = { workspace = true }
+wormhole-circuit = { path = "../circuit" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+test-helpers = { path = "../tests/test-helpers" }
 
 [features]
 default = ["std"]
@@ -18,3 +22,7 @@ no_std = []
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "prover"
+harness = false
