@@ -3,6 +3,7 @@
 .idea
 .direnv
 .envrc
+.vscode
 
 Cargo.lock
 circuit/.DS_Store
